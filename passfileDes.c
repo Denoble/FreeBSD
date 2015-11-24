@@ -10,40 +10,43 @@
 #include<sys/types.h>
 #include<sys/socket.h>
 #include<sys/un.h>
-int send_fd(int fd, int fd_to_send){
-	struct iovec iov[1];
-	struct msghdr msg;
-	char buf[2]; /* send_fd()/recv_fd() 2-byte protocol */
-	iov[0].iov_base = buf;
-	iov[0].iov_len = 2;
-	msg.msg_iov = iov;
-	msg.msg_iovlen = 1;
-	msg.msg_name = NULL;
-	msg.msg_namelen = 0;
-	if (fd_to_send < 0) {
-		msg.msg_control = NULL;
-		msg.msg_controllen = 0;
-		buf[1] = -fd_to_send; /* nonzero status means error */
-		if (buf[1] == 0)
-			buf[1] = 1; /* -256, etc. would screw up protocol */
-	}
- 	else {
-		if (cmptr == NULL && (cmptr = malloc(CONTROLLEN)) == NULL)
-			return(-1);
-		cmptr->cmsg_level = SOL_SOCKET;
-		cmptr->cmsg_type = SCM_RIGHTS;
-		cmptr->cmsg_len = CONTROLLEN;
-		msg.msg_control = cmptr;
-		msg.msg_controllen = CONTROLLEN;
-		*(int *)CMSG_DATA(cmptr) = fd_to_send; /* the fd to pass */
-		buf[1] = 0; /* zero status means OK */
-	}
-	buf[0] = 0; /* null byte flag to recv_fd() */
-	if (sendmsg(fd, &msg, 0) != 2)
-		return(-1);
-	return(0);
 
+static int
+send_file_descriptor(
+  int socket, /* Socket through which the file descriptor is passed */
+  int fd_to_send) /* File descriptor to be passed, could be another socket */
+{
+ struct msghdr message;
+ struct iovec iov[1];
+ struct cmsghdr *control_message = NULL;
+ char ctrl_buf[CMSG_SPACE(sizeof(int))];
+ char data[1];
+
+ memset(&message, 0, sizeof(struct msghdr));
+ memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
+
+ /* We are passing at least one byte of data so that recvmsg() will not return 0 */
+ data[0] = ' ';
+ iov[0].iov_base = data;
+ iov[0].iov_len = sizeof(data);
+
+ message.msg_name = NULL;
+ message.msg_namelen = 0;
+ message.msg_iov = iov;
+ message.msg_iovlen = 1;
+ message.msg_controllen =  CMSG_SPACE(sizeof(int));
+ message.msg_control = ctrl_buf;
+
+ control_message = CMSG_FIRSTHDR(&message);
+ control_message->cmsg_level = SOL_SOCKET;
+ control_message->cmsg_type = SCM_RIGHTS;
+ control_message->cmsg_len = CMSG_LEN(sizeof(int));
+
+ *((int *) CMSG_DATA(control_message)) = fd_to_send;
+
+ return sendmsg(socket, &message, 0);
 }
+
  int main(int argc,char* argv[]){
 
 	int sockfd;
@@ -67,16 +70,17 @@ int send_fd(int fd, int fd_to_send){
 		exit(1);
 	}
 	while(result>-1){
-		c= send_fd(result, a);
-			if(c!=0)
+		c= send_file_descriptor(sockfd, a);
+			if(c<0)
 				err(-1,"cannot send file file descriptor a ");	
-		b= send_fd(result, b);
-			err(-1,"cannot send file file descriptor  b");	
-		result==-1;
+		b= send_file_descriptor(sockfd, b);
+			if(b<0)
+				err(-1,"cannot send file file descriptor  b");	
+		result=-1;
 	}
 	close(a);
 	close(b);
-	close(result);
+	close(sockfd);
 	
 }
 

@@ -87,7 +87,7 @@ int main(){
 		 b=recv_file_descriptor(client_sockfd);
 			if(b==-1)
 			err(-1,"can't read from socket");
-		//cap_enter();
+		cap_enter();
 		while(read(a,readWords,sizeof(readWords))>0){
 			for(i=0;i<strlen(readWords)+1;i++){
 				uppercase[i]=toupper(readWords[i]);
@@ -99,8 +99,8 @@ int main(){
 		
 	}	
 	
-	close(a);
 	close(b);
+	close(a);
 	close(client_sockfd);
 	
 	return 0;
