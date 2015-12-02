@@ -4,6 +4,7 @@
 #include<stdlib.h>
 #define DATAMAX 50
  typedef struct{
-	 int fileDes;
+	 int read_fileDes;
+	 int write_fileDes;
 	 char data[DATAMAX];
  }SocketMessage;
