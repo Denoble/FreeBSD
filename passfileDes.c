@@ -10,6 +10,7 @@
 #include<sys/types.h>
 #include<sys/socket.h>
 #include<sys/un.h>
+#include"fileDes.h"
 
 static int
 send_file_descriptor(
@@ -54,12 +55,16 @@ send_file_descriptor(
 	struct sockaddr_un address;
 	int result;
 	int a,b,c,d;
-	a=open("Reading.txt",O_RDONLY);
-	if(a<0)
-			err(-1,"fail to open file Reading.txt \n");
-	b=open("Written.txt",O_WRONLY|O_APPEND|O_CREAT);
-	if(b<0)
+	// Initallizing my Struct named SocketMessage
+	SocketMessage *sMsg= (SocketMessage *)malloc(sizeof(SocketMessage));
+	strcpy(sMsg->data,"Data from client received and printed \n");
+	sMsg->read_fileDes=open("Reading.txt",O_RDONLY);
+	if(sMsg->read_fileDes<0)
+			err(-1,"fail to open file Reading.txt");
+	sMsg->write_fileDes=open("Written.txt",O_WRONLY|O_APPEND|O_CREAT);
+	if(sMsg->write_fileDes<0)
 			err(-1,"fail to open file Writing.txt");
+	
 	sockfd= socket(AF_UNIX,SOCK_STREAM,0);
 	address.sun_family=AF_UNIX;
 	strcpy(address.sun_path,"server_socket");
@@ -69,18 +74,29 @@ send_file_descriptor(
 		perror("OOPS: Client cannot connect \n");
 		exit(1);
 	}
-	while(result>-1){
-		c= send_file_descriptor(sockfd, a);
-			if(c<0)
-				err(-1,"cannot send file file descriptor a ");	
-		b= send_file_descriptor(sockfd, b);
-			if(b<0)
-				err(-1,"cannot send file file descriptor  b");	
-		result=-1;
-	}
-	close(a);
-	close(b);
+	d=write(sockfd,sMsg->data,sizeof(sMsg->data));
+		if(d>0){
+			printf(" \n");
+			printf(" Data was sent to server successfully \n");
+			printf(" \n");
+			printf(" ...............................\n");
+			printf(" \n");
+		}
+		
+	c= send_file_descriptor(sockfd, sMsg->read_fileDes);
+		if(c<0)
+			err(-1,"cannot send file file descriptor a ");	
+	b= send_file_descriptor(sockfd, sMsg->write_fileDes);
+		if(b<0)
+			err(-1,"cannot send file file descriptor  b");	
+	
+
+	
+	close(sMsg->read_fileDes);
+	close(sMsg->write_fileDes);
 	close(sockfd);
 	
+	free(sMsg);
+	return 0;	
 }
 

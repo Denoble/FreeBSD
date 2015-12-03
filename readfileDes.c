@@ -10,6 +10,7 @@
 #include<sys/types.h>
 #include<sys/socket.h>
 #include<sys/un.h>
+#include"fileDes.h"
 
 static int
 recv_file_descriptor(
@@ -63,46 +64,74 @@ int main(){
 	int server_len,client_len;
 	struct sockaddr_un server_address;
 	struct sockaddr_un client_address;
-	int a,b,c,d,i;
+	int a,b,c,d,i,n;
+	char data_recieved[30];
 	char readWords[128];
 	char* status="server waiting for a connection ";
 	char uppercase[128];
 	char* newline="\n";
+	SocketMessage *client_msg= (SocketMessage*)malloc(sizeof(SocketMessage));
 	unlink("server_socket");
 	server_sockfd=socket(AF_UNIX,SOCK_STREAM,0);
 	server_address.sun_family=AF_UNIX;
 	strcpy(server_address.sun_path,"server_socket");
-	server_len=sizeof(server_address);
-	bind(server_sockfd,(struct sockaddr*) &server_address,server_len);
-	listen(server_sockfd,5);
+	
 	while(1){
+		server_len=sizeof(server_address);
+		bind(server_sockfd,(struct sockaddr*) &server_address,server_len);
+		listen(server_sockfd,5);
 		write(STDOUT_FILENO,status,strlen(status));
 		write(STDOUT_FILENO,newline,strlen(newline));	
 		client_len=sizeof(client_address);
 		client_sockfd=accept(server_sockfd,NULL,NULL);
-		a=recv_file_descriptor(client_sockfd);
+		if(client_sockfd<0)
+			printf("cannot connect to server \n");
+		i=read(client_sockfd,client_msg->data,sizeof(client_msg->data));
 	
-		if(a==-1)
+		if(i>0){
+			
+			write(STDOUT_FILENO,client_msg->data,i);
+			write(STDOUT_FILENO,newline,strlen(newline));	
+			
+		}
+		
+				
+		else
+			printf("cannot read from socket \n");
+		
+		
+		client_msg->read_fileDes=recv_file_descriptor(client_sockfd);
+	
+		if(client_msg->read_fileDes<0)
 			err(-1,"can't read from socket");
-		 b=recv_file_descriptor(client_sockfd);
-			if(b==-1)
+		 client_msg->write_fileDes=recv_file_descriptor(client_sockfd);
+			if(client_msg->write_fileDes<0)
 			err(-1,"can't read from socket");
-		cap_enter();
-		while(read(a,readWords,sizeof(readWords))>0){
-			for(i=0;i<strlen(readWords)+1;i++){
-				uppercase[i]=toupper(readWords[i]);
-			}
-			write(b,uppercase,strlen(uppercase));
-			write(b,newline,strlen(newline));
+		
+		//cap_enter();
+		n=1;
+		
+		while(n>0){
+			n=read(client_msg->read_fileDes,readWords,sizeof(readWords));
+			if(n>0){
+				for(i=0;i<n;i++){
+					uppercase[i]=toupper(readWords[i]);
+				}
+				write(client_msg->write_fileDes,uppercase,n);
+				write(client_msg->write_fileDes,newline,strlen(newline));
+			}				
+				
+			
 		}
 
+		write(client_msg->write_fileDes,newline,strlen(newline));
 		
 	}	
 	
-	close(b);
-	close(a);
-	close(client_sockfd);
+		
 	
+	close(client_sockfd);
+	free(client_msg);
 	return 0;
 }
 	
