@@ -7,55 +7,49 @@
 #include<ctype.h>
 #include<sys/capability.h>
 #include<err.h>
+#include<errno.h>
 #include<sys/types.h>
 #include<sys/socket.h>
 #include<sys/un.h>
 #include"fileDes.h"
 
+
 static int
-recv_file_descriptor(
-  int socket) /* Socket from which the file descriptor is read */
+send_file_descriptor(
+  int socket, /* Socket through which the file descriptor is passed */
+  int fd_to_send) /* File descriptor to be passed, could be another socket */
 {
- int sent_fd;
  struct msghdr message;
  struct iovec iov[1];
  struct cmsghdr *control_message = NULL;
  char ctrl_buf[CMSG_SPACE(sizeof(int))];
  char data[1];
- int res;
 
  memset(&message, 0, sizeof(struct msghdr));
  memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
 
- /* For the dummy data */
+ /* We are passing at least one byte of data so that recvmsg() will not return 0 */
+ data[0] = ' ';
  iov[0].iov_base = data;
  iov[0].iov_len = sizeof(data);
 
  message.msg_name = NULL;
  message.msg_namelen = 0;
- message.msg_control = ctrl_buf;
- message.msg_controllen = CMSG_SPACE(sizeof(int));
  message.msg_iov = iov;
  message.msg_iovlen = 1;
+ message.msg_controllen =  CMSG_SPACE(sizeof(int));
+ message.msg_control = ctrl_buf;
 
- if((res = recvmsg(socket, &message, 0)) <= 0)
-  return res;
+ control_message = CMSG_FIRSTHDR(&message);
+ control_message->cmsg_level = SOL_SOCKET;
+ control_message->cmsg_type = SCM_RIGHTS;
+ control_message->cmsg_len = CMSG_LEN(sizeof(int));
 
- /* Iterate through header to find if there is a file descriptor */
- for(control_message = CMSG_FIRSTHDR(&message);
-     control_message != NULL;
-     control_message = CMSG_NXTHDR(&message,
-                                   control_message))
- {
-  if( (control_message->cmsg_level == SOL_SOCKET) &&
-      (control_message->cmsg_type == SCM_RIGHTS) )
-  {
-   return *((int *) CMSG_DATA(control_message));
-  }
- }
+ *((int *) CMSG_DATA(control_message)) = fd_to_send;
 
- return -1;
+ return sendmsg(socket, &message, 0);
 }
+
 
 
 
@@ -66,11 +60,11 @@ int main(){
 	struct sockaddr_un client_address;
 	int a,b,c,d,i,n;
 	char data_recieved[30];
-	char readWords[128];
+
 	char* status="server waiting for a connection ";
-	char uppercase[128];
+	cap_rights_t rights,wrights;
 	char* newline="\n";
-	SocketMessage *client_msg= (SocketMessage*)malloc(sizeof(SocketMessage));
+	SocketMessage *cMsg= (SocketMessage*)malloc(sizeof(SocketMessage));
 	unlink("server_socket");
 	server_sockfd=socket(AF_UNIX,SOCK_STREAM,0);
 	server_address.sun_family=AF_UNIX;
@@ -86,52 +80,96 @@ int main(){
 		client_sockfd=accept(server_sockfd,NULL,NULL);
 		if(client_sockfd<0)
 			printf("cannot connect to server \n");
-		i=read(client_sockfd,client_msg->data,sizeof(client_msg->data));
+		i=read(client_sockfd,cMsg->rdFileName,sizeof(cMsg->rdFileName));
 	
 		if(i>0){
 			
-			write(STDOUT_FILENO,client_msg->data,i);
-			write(STDOUT_FILENO,newline,strlen(newline));	
+		  printf(" File name %s recieved from client\n",cMsg->rdFileName);	
+		  cMsg->fileDesRd=open(cMsg->rdFileName,O_RDONLY);			
+
+			if(cMsg->fileDesRd<0){
+				err(-1,"fail to open file ");
+				printf("%s \n",cMsg->rdFileName);
+				exit(0);
+			}	
+		}
+		
+				
+		else
+			printf("cannot read read-file from socket \n");
+		i=read(client_sockfd,cMsg->rdRights,sizeof(cMsg->rdRights));
+		if(i>0){
+			
+			cap_rights_init(&rights,CAP_FSTAT,cMsg->rdRights);
+		
+		       if(cap_rights_limit(cMsg->fileDesRd,&rights)<0)
+			err(1,"cap_rights_limit() for reading failed");
+		
+	
+			
 			
 		}
 		
 				
 		else
-			printf("cannot read from socket \n");
+			printf("cannot read read-file Rights from socket \n");
 		
 		
-		client_msg->read_fileDes=recv_file_descriptor(client_sockfd);
+		
+		
+		
+		c= send_file_descriptor(client_sockfd, cMsg->fileDesRd);
+		if(c<0)
+			err(-1,"cannot send read-file file descriptor ");
+		i=read(client_sockfd,cMsg->wrFileName,sizeof(cMsg->wrFileName));
 	
-		if(client_msg->read_fileDes<0)
-			err(-1,"can't read from socket");
-		 client_msg->write_fileDes=recv_file_descriptor(client_sockfd);
-			if(client_msg->write_fileDes<0)
-			err(-1,"can't read from socket");
-		
-		//cap_enter();
-		n=1;
-		
-		while(n>0){
-			n=read(client_msg->read_fileDes,readWords,sizeof(readWords));
-			if(n>0){
-				for(i=0;i<n;i++){
-					uppercase[i]=toupper(readWords[i]);
-				}
-				write(client_msg->write_fileDes,uppercase,n);
-				write(client_msg->write_fileDes,newline,strlen(newline));
-			}				
-				
+		if(i>0){
+			
+		    printf(" File name %s recieved from client\n",cMsg->wrFileName);	
+		    cMsg->fileDesWr=open(cMsg->wrFileName,O_WRONLY|O_APPEND|O_CREAT);
+		    if(cMsg->fileDesWr<0){
+			err(-1,"fail to open file ");
+			printf("%s \n",cMsg->wrFileName);
+			exit(0);
+		   }
 			
 		}
-
-		write(client_msg->write_fileDes,newline,strlen(newline));
 		
+				
+		else
+			printf("cannot read write file from socket \n");
+		
+		
+		
+		i=read(client_sockfd,cMsg->wrRights,sizeof(cMsg->wrRights));
+		if(i>0){
+			
+			
+			
+		   cap_rights_init(&wrights,CAP_FSTAT,cMsg->wrRights);
+		   if(cap_rights_limit(cMsg->fileDesWr,&wrights)<0 )
+			err(1,"cap_rights_limit() for writing failed");
+		
+					
+			
+		}
+		
+				
+		else
+			printf("cannot read  write file Rights from socket \n");
+		
+		
+		
+		c= send_file_descriptor(client_sockfd, cMsg->fileDesWr);
+		if(c<0)
+			err(-1,"cannot send write-file file descriptor \n ");
+		
+	   
 	}	
 	
 		
 	
 	close(client_sockfd);
-	free(client_msg);
+	free(cMsg);
 	return 0;
 }
-	
