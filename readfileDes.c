@@ -60,8 +60,8 @@ int main(){
 	struct sockaddr_un client_address;
 	int a,b,c,d,i,n;
 	char data_recieved[30];
-
-	char* status="server waiting for a connection ";
+	
+	char* status="\n server waiting for a connection \n";
 	cap_rights_t rights,wrights;
 	char* newline="\n";
 	SocketMessage *cMsg= (SocketMessage*)malloc(sizeof(SocketMessage));
@@ -69,7 +69,8 @@ int main(){
 	server_sockfd=socket(AF_UNIX,SOCK_STREAM,0);
 	server_address.sun_family=AF_UNIX;
 	strcpy(server_address.sun_path,"server_socket");
-	
+	cap_rights_init(&wrights,CAP_FSTAT,CAP_WRITE,CAP_CREATE,CAP_READ,CAP_SEEK);
+	cap_rights_init(&rights,CAP_FSTAT,CAP_WRITE,CAP_CREATE,CAP_READ,CAP_SEEK);
 	while(1){
 		server_len=sizeof(server_address);
 		bind(server_sockfd,(struct sockaddr*) &server_address,server_len);
@@ -89,7 +90,7 @@ int main(){
 
 			if(cMsg->fileDesRd<0){
 				err(-1,"fail to open file ");
-				printf("%s \n",cMsg->rdFileName);
+				printf("\n %s \n",cMsg->rdFileName);
 				exit(0);
 			}	
 		}
@@ -97,8 +98,8 @@ int main(){
 				
 		else
 			printf("cannot read read-file from socket \n");
-		i=read(client_sockfd,cMsg->rdRights,sizeof(cMsg->rdRights));
-		if(i>0){
+		i=read(client_sockfd,&cMsg->rdRights,sizeof(cMsg->rdRights));
+		if(i>0 && cap_rights_contains(&rights,&cMsg->rdRights)){
 			
 			cap_rights_init(&rights,CAP_FSTAT,cMsg->rdRights);
 		
@@ -129,7 +130,7 @@ int main(){
 		    cMsg->fileDesWr=open(cMsg->wrFileName,O_WRONLY|O_APPEND|O_CREAT);
 		    if(cMsg->fileDesWr<0){
 			err(-1,"fail to open file ");
-			printf("%s \n",cMsg->wrFileName);
+			printf("\n %s \n",cMsg->wrFileName);
 			exit(0);
 		   }
 			
@@ -141,8 +142,8 @@ int main(){
 		
 		
 		
-		i=read(client_sockfd,cMsg->wrRights,sizeof(cMsg->wrRights));
-		if(i>0){
+		i=read(client_sockfd,&cMsg->wrRights,sizeof(cMsg->wrRights));
+		if(i>0 && cap_rights_contains(&wrights,&cMsg->wrRights)){
 			
 			
 			
