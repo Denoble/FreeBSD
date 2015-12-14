@@ -69,13 +69,19 @@ recv_file_descriptor(
 	char readWords[128];
 	char uppercase[128];
 	char* newline="\n";
+	cap_rights_t rights,wrights;
 	// Initallizing my Struct named SocketMessage
 	SocketMessage *sMsg= (SocketMessage *)malloc(sizeof(SocketMessage));
+	if(argc!=5){
+	  printf("More commandline arguments needed !\n");
+	  exit(0);
+	}
 	strcpy(sMsg->rdFileName,argv[2]);
-	strcpy(sMsg->rdRights,"CAP_READ");
 	strcpy(sMsg->wrFileName,argv[4]);
-	strcpy(sMsg->wrRights,"CAP_WRITE,CAP_CREATE");
-	
+	cap_rights_init(&rights,CAP_FSTAT,CAP_READ);
+	cap_rights_init(&wrights,CAP_FSTAT,CAP_WRITE,CAP_CREATE);
+	sMsg->rdRights=rights;
+	sMsg->wrRights=wrights;
 	sockfd= socket(AF_UNIX,SOCK_STREAM,0);
 	address.sun_family=AF_UNIX;
 	strcpy(address.sun_path,"server_socket");
@@ -87,7 +93,7 @@ recv_file_descriptor(
 	}
 	cap_enter();
 	d=write(sockfd,sMsg->rdFileName,sizeof(sMsg->rdFileName));
-	c=write(sockfd,sMsg->rdRights,sizeof(sMsg->rdRights));
+	c=write(sockfd,&sMsg->rdRights,sizeof(sMsg->rdRights));
 	
 	
 	
@@ -104,7 +110,7 @@ recv_file_descriptor(
 			err(-1,"can't read from socket");
 	
 	d=write(sockfd,sMsg->wrFileName,sizeof(sMsg->wrFileName));
-	c=write(sockfd,sMsg->wrRights,sizeof(sMsg->wrRights));
+	c=write(sockfd,&sMsg->wrRights,sizeof(sMsg->wrRights));
 	
 	
 	if(d>0 && c>0){
